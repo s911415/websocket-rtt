@@ -128,7 +128,7 @@ func startClient(config Config) error {
 	go func() {
 		defer close(done)
 		for {
-			_, serverMessage, err := conn.ReadMessage()
+			messageType, serverMessage, err := conn.ReadMessage()
 			if err != nil {
 				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
 					return
@@ -137,33 +137,44 @@ func startClient(config Config) error {
 				return
 			}
 
-			var msg Message
-			if err := json.Unmarshal(serverMessage, &msg); err != nil {
-				logger.Write(fmt.Sprintf("Error parsing message: %v", err))
-				continue
+			switch messageType {
+			case websocket.TextMessage:
+				var msg Message
+				if err := json.Unmarshal(serverMessage, &msg); err != nil {
+					logger.Write(fmt.Sprintf("Error parsing message: %v", err))
+					continue
+				}
+
+				// Calculate round-trip time with nanosecond precision
+				now := time.Now().UTC()
+				rtt := now.Sub(msg.Timestamp)
+
+				// Update statistics
+				stats.Lock()
+				stats.messageCount++
+				stats.totalRTT += rtt
+				if rtt < stats.minRTT {
+					stats.minRTT = rtt
+				}
+				if rtt > stats.maxRTT {
+					stats.maxRTT = rtt
+				}
+				stats.Unlock()
+
+				// log.Printf("Received: %s (ID: %s)", msg.Content, msg.MessageID)
+				logger.Write(fmt.Sprintf("Round-trip time: %d us", rtt.Microseconds()))
+
+				// Signal to send the next message
+				sendNext <- struct{}{}
+			case websocket.PingMessage:
+				// Received a ping from the server, send back a pong
+				err := conn.WriteMessage(websocket.PongMessage, nil)
+				if err != nil {
+					logger.Write(fmt.Sprintf("Error sending pong response: %v", err))
+					return // Exit the read loop if pong fails
+				}
+				logger.Write("Received ping, sent pong.")
 			}
-
-			// Calculate round-trip time with nanosecond precision
-			now := time.Now().UTC()
-			rtt := now.Sub(msg.Timestamp)
-
-			// Update statistics
-			stats.Lock()
-			stats.messageCount++
-			stats.totalRTT += rtt
-			if rtt < stats.minRTT {
-				stats.minRTT = rtt
-			}
-			if rtt > stats.maxRTT {
-				stats.maxRTT = rtt
-			}
-			stats.Unlock()
-
-			// log.Printf("Received: %s (ID: %s)", msg.Content, msg.MessageID)
-			logger.Write(fmt.Sprintf("Round-trip time: %d us", rtt.Microseconds()))
-
-			// Signal to send the next message
-			sendNext <- struct{}{}
 		}
 	}()
 

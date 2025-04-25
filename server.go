@@ -5,6 +5,8 @@ import (
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"sync"
+	"time"
 )
 
 var upgrader = websocket.Upgrader{
@@ -52,6 +54,58 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("X-Forwarded-For: %s", xffHeader)
 	}
 
+	const (
+		pingPeriod  = 10 * time.Second
+		pongTimeout = 30 * time.Second
+	)
+
+	var (
+		lastActivity = time.Now()
+		lastPingTime = time.Now()
+		pongReceived = true
+		mu           sync.Mutex
+	)
+
+	// heartbeat Goroutine
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				mu.Lock()
+				if !pongReceived && time.Since(lastPingTime) >= pongTimeout {
+					log.Printf("Client %s didn't respond to ping in time. Closing connection.", conn.RemoteAddr())
+					conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "Idle timeout"))
+					conn.Close()
+					mu.Unlock()
+					return
+				}
+
+				if pongReceived && time.Since(lastActivity) >= pingPeriod {
+					pongReceived = false
+					if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+						log.Printf("Error sending ping to %s: %v", conn.RemoteAddr(), err)
+						conn.Close()
+						mu.Unlock()
+						return
+					}
+					lastPingTime = time.Now()
+				}
+				mu.Unlock()
+			}
+		}
+	}()
+
+	conn.SetPongHandler(func(string) error {
+		mu.Lock()
+		lastActivity = time.Now()
+		pongReceived = true
+		mu.Unlock()
+		return nil
+	})
+
 	for {
 		// Read message from client
 		_, clientMessage, err := conn.ReadMessage()
@@ -62,6 +116,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error reading message: %v", err)
 			break
 		}
+
+		mu.Lock()
+		lastActivity = time.Now()
+		mu.Unlock()
 
 		// Parse client message
 		var msg Message
