@@ -60,8 +60,10 @@ func startClient(config Config) error {
 
 	logger.Write(fmt.Sprintf("Initialized Snowflake ID generator with node ID: %d", nodeID))
 
-	// Configure WebSocket dialer with TLS if enabled
+	// Configure WebSocket
 	dialer := websocket.DefaultDialer
+	dialer.HandshakeTimeout = 10 * time.Second
+
 	if config.UseTLS {
 		// Set up TLS configuration
 		tlsConfig := &tls.Config{
@@ -108,7 +110,12 @@ func startClient(config Config) error {
 	}
 	defer conn.Close()
 
-	logger.Write(fmt.Sprintf("Connected to WebSocket server at %s", url))
+	logger.Write(
+		fmt.Sprintf("Connected to WebSocket server (%s -> %s) at: %s",
+			conn.LocalAddr(), conn.RemoteAddr(),
+			url,
+		),
+	)
 
 	// Channel to signal when to exit
 	done := make(chan struct{})
@@ -131,7 +138,33 @@ func startClient(config Config) error {
 
 	// Set up a goroutine to read messages from the server
 	go func() {
-		defer close(done)
+		defer func() {
+			// Ensure we flush the log buffer
+			logger.Flush()
+
+			// display stats before exiting
+			stats.Lock()
+			defer stats.Unlock()
+
+			if stats.messageCount == 0 {
+				fmt.Println("\nNo messages were exchanged. Exiting...")
+				return
+			}
+
+			// Calculate average
+			avgRTT := stats.totalRTT / time.Duration(stats.messageCount)
+
+			// Display ping-style statistics
+			fmt.Printf("\nApproximate round trip times in micro-seconds:\n")
+			fmt.Printf("    Minimum = %dus, Maximum = %dus, Average = %dus\n",
+				stats.minRTT.Microseconds(),
+				stats.maxRTT.Microseconds(),
+				avgRTT.Microseconds(),
+			)
+			fmt.Printf("Messages count: %d\n", stats.messageCount)
+			close(done)
+		}()
+
 		for {
 			messageType, serverMessage, err := conn.ReadMessage()
 			if err != nil {
@@ -179,6 +212,8 @@ func startClient(config Config) error {
 					return // Exit the read loop if pong fails
 				}
 				logger.Write("Received ping, sent pong.")
+			case websocket.CloseMessage:
+				done <- struct{}{}
 			}
 		}
 	}()
@@ -187,7 +222,6 @@ func startClient(config Config) error {
 	sendNext <- struct{}{}
 
 	// Main loop for sending messages
-	messagesSent := 0
 	for {
 		select {
 		case <-sendNext:
@@ -224,8 +258,6 @@ func startClient(config Config) error {
 
 			// log.Printf("Sent message: %s (ID: %s)", content, messageID)
 
-			messagesSent++
-
 			// Small delay to prevent flooding the connection
 			time.Sleep(time.Duration(config.Interval) * time.Millisecond)
 
@@ -233,30 +265,6 @@ func startClient(config Config) error {
 			return nil
 
 		case <-interrupt:
-			// When SIGINT is received, display stats before exiting
-
-			// Ensure we flush the log buffer
-			logger.Flush()
-
-			stats.Lock()
-			defer stats.Unlock()
-
-			if stats.messageCount == 0 {
-				fmt.Println("\nNo messages were exchanged. Exiting...")
-				return nil
-			}
-
-			// Calculate average
-			avgRTT := stats.totalRTT / time.Duration(stats.messageCount)
-
-			// Display ping-style statistics
-			fmt.Printf("\nApproximate round trip times in micro-seconds:\n")
-			fmt.Printf("    Minimum = %dus, Maximum = %dus, Average = %dus\n",
-				stats.minRTT.Microseconds(),
-				stats.maxRTT.Microseconds(),
-				avgRTT.Microseconds())
-			fmt.Printf("Messages sent: %d\n", messagesSent)
-
 			// Send close message to server (optional but polite)
 			err := conn.WriteMessage(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))

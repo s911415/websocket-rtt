@@ -47,7 +47,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error upgrading to WebSocket: %v", err)
 		return
 	}
-	defer conn.Close()
 
 	log.Printf("Client connected: %s", conn.RemoteAddr())
 	if xffHeader := r.Header.Get("X-Forwarded-For"); xffHeader != "" {
@@ -58,6 +57,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		pingPeriod  = 10 * time.Second
 		pongTimeout = 30 * time.Second
 	)
+	ticker := time.NewTicker(pingPeriod)
+
+	defer func() {
+		conn.Close()
+		ticker.Stop()
+		log.Printf("Client disconnected: %s", conn.RemoteAddr())
+	}()
 
 	var (
 		lastActivity = time.Now()
@@ -68,9 +74,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// heartbeat Goroutine
 	go func() {
-		ticker := time.NewTicker(pingPeriod)
-		defer ticker.Stop()
-
 		for {
 			select {
 			case <-ticker.C:
@@ -85,6 +88,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 				if pongReceived && time.Since(lastActivity) >= pingPeriod {
 					pongReceived = false
+					log.Printf("Connection %s idle, sending ping...", conn.RemoteAddr())
 					if err := conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
 						log.Printf("Error sending ping to %s: %v", conn.RemoteAddr(), err)
 						conn.Close()
@@ -99,16 +103,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	conn.SetPongHandler(func(string) error {
+		log.Printf("pong received from %s", conn.RemoteAddr())
 		mu.Lock()
 		lastActivity = time.Now()
 		pongReceived = true
+		ticker.Reset(pingPeriod)
 		mu.Unlock()
 		return nil
 	})
 
 	for {
 		// Read message from client
-		_, clientMessage, err := conn.ReadMessage()
+		messageType, clientMessage, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
 				return
@@ -121,31 +127,36 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		lastActivity = time.Now()
 		mu.Unlock()
 
-		// Parse client message
-		var msg Message
-		if err := json.Unmarshal(clientMessage, &msg); err != nil {
-			log.Printf("Error parsing message: %v", err)
-			continue
-		}
+		switch messageType {
+		case websocket.TextMessage:
+			// Parse client message
+			var msg Message
+			if err := json.Unmarshal(clientMessage, &msg); err != nil {
+				log.Printf("Error parsing message: %v", err)
+				continue
+			}
 
-		// log.Printf("Received from client: %s (ID: %s)", msg.Content, msg.MessageID)
+			// log.Printf("Received from client: %s (ID: %s)", msg.Content, msg.MessageID)
 
-		// Create response message (echo back with original message)
-		response := Message{
-			Timestamp: msg.Timestamp,
-			Content:   msg.Content,
-			MessageID: msg.MessageID,
-		}
+			// Create response message (echo back with original message)
+			response := Message{
+				Timestamp: msg.Timestamp,
+				Content:   msg.Content,
+				MessageID: msg.MessageID,
+			}
 
-		// Send response back to client
-		responseJSON, err := json.Marshal(response)
-		if err != nil {
-			log.Printf("Error marshaling response: %v", err)
-			continue
-		}
+			// Send response back to client
+			responseJSON, err := json.Marshal(response)
+			if err != nil {
+				log.Printf("Error marshaling response: %v", err)
+				continue
+			}
 
-		if err := conn.WriteMessage(websocket.TextMessage, responseJSON); err != nil {
-			log.Printf("Error sending response: %v", err)
+			if err := conn.WriteMessage(websocket.TextMessage, responseJSON); err != nil {
+				log.Printf("Error sending response: %v", err)
+				break
+			}
+		case websocket.CloseMessage:
 			break
 		}
 	}
