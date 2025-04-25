@@ -11,6 +11,7 @@ type Config struct {
 	UseTLS             bool
 	InsecureSkipVerify bool
 	SSLKeyLogFile      string
+	ServerName         string
 	Headers            map[string]string
 	Interval           uint64
 }

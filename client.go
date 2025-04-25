@@ -80,6 +80,11 @@ func startClient(config Config) error {
 			}
 		}
 
+		// Configure SNI if server name is not empty
+		if config.ServerName != "" {
+			tlsConfig.ServerName = config.ServerName
+		}
+
 		dialer.TLSClientConfig = tlsConfig
 	}
 

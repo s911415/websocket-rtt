@@ -37,6 +37,7 @@ func main() {
 	// Define command-line flags to determine mode and address
 	mode := flag.String("mode", "", "Operation mode: 'server' or 'client'")
 	addr := flag.String("addr", "localhost:8080", "WebSocket server address")
+	serverName := flag.String("servername", "", "Server Name when TLS used")
 	interval := flag.Uint64("interval", 100, "Interval of messages in miliseconds")
 	useTLS := flag.Bool("tls", false, "Use TLS for secure connection")
 	insecureSkipVerify := flag.Bool("k", false, "Skip TLS certificate verification (insecure)")
@@ -56,6 +57,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "        Operation mode: 'server' or 'client' (required)\n")
 		fmt.Fprintf(os.Stderr, "  -addr string\n")
 		fmt.Fprintf(os.Stderr, "        WebSocket server address (default \"localhost:8080\")\n")
+		fmt.Fprintf(os.Stderr, "  -servername string\n")
+		fmt.Fprintf(os.Stderr, "        ServerName when TLS used\n")
 		fmt.Fprintf(os.Stderr, "  -interval number\n")
 		fmt.Fprintf(os.Stderr, "        Interval for each message, unit: ms (default \"100 ms\")\n")
 		fmt.Fprintf(os.Stderr, "  -tls\n")
@@ -106,6 +109,7 @@ func main() {
 	// Create config structure to pass parameters
 	config := Config{
 		Addr:               *addr,
+		ServerName:         *serverName,
 		Interval:           *interval,
 		UseTLS:             *useTLS,
 		InsecureSkipVerify: *insecureSkipVerify,
