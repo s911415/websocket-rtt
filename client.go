@@ -88,7 +88,7 @@ func startClient(config Config) error {
 	if config.UseTLS {
 		scheme = "wss"
 	}
-	url := fmt.Sprintf("%s://%s/ws", scheme, config.Addr)
+	url := fmt.Sprintf("%s://%s", scheme, config.Addr)
 
 	// Prepare request headers
 	header := http.Header{}
@@ -211,7 +211,7 @@ func startClient(config Config) error {
 			messagesSent++
 
 			// Small delay to prevent flooding the connection
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(time.Duration(config.Interval) * time.Millisecond)
 
 		case <-done:
 			return nil

@@ -48,11 +48,17 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	log.Printf("Client connected: %s", conn.RemoteAddr())
+	if xffHeader := r.Header.Get("X-Forwarded-For"); xffHeader != "" {
+		log.Printf("X-Forwarded-For: %s", xffHeader)
+	}
 
 	for {
 		// Read message from client
 		_, clientMessage, err := conn.ReadMessage()
 		if err != nil {
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+				return
+			}
 			log.Printf("Error reading message: %v", err)
 			break
 		}

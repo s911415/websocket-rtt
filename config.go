@@ -12,6 +12,7 @@ type Config struct {
 	InsecureSkipVerify bool
 	SSLKeyLogFile      string
 	Headers            map[string]string
+	Interval           uint64
 }
 
 // headerFlags is a custom flag type to handle multiple -H flags

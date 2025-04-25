@@ -37,6 +37,7 @@ func main() {
 	// Define command-line flags to determine mode and address
 	mode := flag.String("mode", "", "Operation mode: 'server' or 'client'")
 	addr := flag.String("addr", "localhost:8080", "WebSocket server address")
+	interval := flag.Uint64("interval", 100, "Interval of messages in miliseconds")
 	useTLS := flag.Bool("tls", false, "Use TLS for secure connection")
 	insecureSkipVerify := flag.Bool("k", false, "Skip TLS certificate verification (insecure)")
 	keylogFile := flag.String("keylogger", "", "Path to TLS key log file (overrides SSLKEYLOGFILE env var)")
@@ -55,6 +56,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "        Operation mode: 'server' or 'client' (required)\n")
 		fmt.Fprintf(os.Stderr, "  -addr string\n")
 		fmt.Fprintf(os.Stderr, "        WebSocket server address (default \"localhost:8080\")\n")
+		fmt.Fprintf(os.Stderr, "  -interval number\n")
+		fmt.Fprintf(os.Stderr, "        Interval for each message, unit: ms (default \"100 ms\")\n")
 		fmt.Fprintf(os.Stderr, "  -tls\n")
 		fmt.Fprintf(os.Stderr, "        Use TLS for secure connection\n")
 		fmt.Fprintf(os.Stderr, "  -k\n")
@@ -103,6 +106,7 @@ func main() {
 	// Create config structure to pass parameters
 	config := Config{
 		Addr:               *addr,
+		Interval:           *interval,
 		UseTLS:             *useTLS,
 		InsecureSkipVerify: *insecureSkipVerify,
 		SSLKeyLogFile:      keyLogFilePath,
