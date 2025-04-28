@@ -10,10 +10,12 @@ type Config struct {
 	Addr               string
 	UseTLS             bool
 	InsecureSkipVerify bool
+	NoWait             bool
 	SSLKeyLogFile      string
 	ServerName         string
 	Headers            map[string]string
 	Interval           uint64
+	PayloadSize        uint16
 }
 
 // headerFlags is a custom flag type to handle multiple -H flags

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strings"
 )
@@ -39,8 +40,10 @@ func main() {
 	addr := flag.String("addr", "localhost:8080", "WebSocket server address")
 	serverName := flag.String("servername", "", "Server Name when TLS used")
 	interval := flag.Uint64("interval", 100, "Interval of messages in miliseconds")
+	payloadSize := flag.Uint64("d", 32, "Size of payload")
 	useTLS := flag.Bool("tls", false, "Use TLS for secure connection")
 	insecureSkipVerify := flag.Bool("k", false, "Skip TLS certificate verification (insecure)")
+	noWait := flag.Bool("nowait", false, "Do not wait for reply")
 	keylogFile := flag.String("keylogger", "", "Path to TLS key log file (overrides SSLKEYLOGFILE env var)")
 	showVersion := flag.Bool("version", false, "Show version information and exit")
 
@@ -61,10 +64,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "        ServerName when TLS used\n")
 		fmt.Fprintf(os.Stderr, "  -interval number\n")
 		fmt.Fprintf(os.Stderr, "        Interval for each message, unit: ms (default \"100 ms\")\n")
+		fmt.Fprintf(os.Stderr, "  -d number\n")
+		fmt.Fprintf(os.Stderr, "        Size of payload. (default: 32, min: 1, max: 65536)\n")
 		fmt.Fprintf(os.Stderr, "  -tls\n")
 		fmt.Fprintf(os.Stderr, "        Use TLS for secure connection\n")
 		fmt.Fprintf(os.Stderr, "  -k\n")
 		fmt.Fprintf(os.Stderr, "        Skip TLS certificate verification (insecure)\n")
+		fmt.Fprintf(os.Stderr, "  -nowait\n")
+		fmt.Fprintf(os.Stderr, "        Do not wait for reply\n")
 		fmt.Fprintf(os.Stderr, "  -keylogger string\n")
 		fmt.Fprintf(os.Stderr, "        Path to TLS key log file (overrides SSLKEYLOGFILE env var)\n")
 		fmt.Fprintf(os.Stderr, "  -H string\n")
@@ -96,6 +103,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// check payload size
+	if *payloadSize > math.MaxUint16 || *payloadSize < 0 {
+		fmt.Fprintf(os.Stderr, "Error: payload size must be between 0 and %d\n", math.MaxUint16)
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	// Determine which key log file path to use
 	var keyLogFilePath string
 	if *keylogFile != "" {
@@ -111,8 +125,10 @@ func main() {
 		Addr:               *addr,
 		ServerName:         *serverName,
 		Interval:           *interval,
+		PayloadSize:        uint16(*payloadSize),
 		UseTLS:             *useTLS,
 		InsecureSkipVerify: *insecureSkipVerify,
+		NoWait:             *noWait,
 		SSLKeyLogFile:      keyLogFilePath,
 		Headers:            parseHeaderArguments(&headers),
 	}

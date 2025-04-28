@@ -16,7 +16,7 @@ import (
 )
 
 // generateRandomString creates a random string of specified length
-func generateRandomString(length int) string {
+func generateRandomString(length uint16) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
 	for i := range b {
@@ -202,8 +202,10 @@ func startClient(config Config) error {
 				// log.Printf("Received: %s (ID: %s)", msg.Content, msg.MessageID)
 				logger.Write(fmt.Sprintf("Round-trip time: %d us", rtt.Microseconds()))
 
-				// Signal to send the next message
-				sendNext <- struct{}{}
+				if !config.NoWait {
+					// Signal to send the next message
+					sendNext <- struct{}{}
+				}
 			case websocket.PingMessage:
 				// Received a ping from the server, send back a pong
 				err := conn.WriteMessage(websocket.PongMessage, nil)
@@ -234,7 +236,7 @@ func startClient(config Config) error {
 			messageID := fmt.Sprintf("%d", snowflakeID)
 
 			// Generate random content
-			content := generateRandomString(16)
+			content := generateRandomString(config.PayloadSize)
 
 			// Create message with current timestamp
 			msg := Message{
@@ -258,6 +260,11 @@ func startClient(config Config) error {
 
 			// log.Printf("Sent message: %s (ID: %s)", content, messageID)
 
+			if config.NoWait {
+				// Signal to send the next message
+				sendNext <- struct{}{}
+			}
+
 			// Small delay to prevent flooding the connection
 			time.Sleep(time.Duration(config.Interval) * time.Millisecond)
 
@@ -276,7 +283,7 @@ func startClient(config Config) error {
 			select {
 			case <-done:
 				// Connection closed by server
-			case <-time.After(time.Second):
+			case <-time.After(5 * time.Second):
 				// Timed out waiting for server to close
 			}
 
